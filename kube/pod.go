@@ -124,6 +124,7 @@ func NewPodTemplate(role *model.Role, settings ExportSettings, grapher util.Mode
 	spec.Add("containers", helm.NewList(container))
 	spec.Add("imagePullSecrets", helm.NewList(imagePullSecrets))
 	spec.Add("dnsPolicy", "ClusterFirst")
+	spec.Add("volumes", getNonClaimVolumes(role))
 	spec.Add("restartPolicy", "Always")
 	if role.Run.ServiceAccount != "" {
 		// This role requires a custom service account
@@ -238,6 +239,22 @@ func getVolumeMounts(role *model.Role) helm.Node {
 	var mounts []helm.Node
 	for _, volume := range role.Run.Volumes {
 		mounts = append(mounts, helm.NewMapping("mountPath", volume.Path, "name", volume.Tag, "readOnly", false))
+	}
+	if len(mounts) == 0 {
+		return nil
+	}
+	return helm.NewNode(mounts)
+}
+
+// getNonClaimVolumes returns the list of pod volumes that are _not_ bound with volume claims
+func getNonClaimVolumes(role *model.Role) helm.Node {
+	var mounts []helm.Node
+	for _, volume := range role.Run.Volumes {
+		switch volume.Type {
+		case model.VolumeTypeHost:
+			hostPathInfo := helm.NewMapping("path", volume.Path, "type", "Directory")
+			mounts = append(mounts, helm.NewMapping("name", volume.Tag, "hostPath", hostPathInfo))
+		}
 	}
 	if len(mounts) == 0 {
 		return nil
